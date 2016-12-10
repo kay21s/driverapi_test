@@ -33,6 +33,7 @@ char       *module_file = (char*) "kernel.ptx";
 char       *kernel_name = (char*) "matSum";
 
 
+#define SHMSZ 512
 // --- functions -----------------------------------------------------------
 void initCUDA()
 {
@@ -93,10 +94,9 @@ void init_shared_memory()
 	int shmid;
 	char *shm, *s;
     key_t key = 5678;
-	int SHMSZ = 2 + sizeof(struct CUctx_st);
 
     if ((shmid = shmget(key, SHMSZ, IPC_CREAT | 0666)) < 0) {
-        perror("shmget");
+        perror("server shmget 5678");
         exit(1);
     }
 
@@ -106,8 +106,19 @@ void init_shared_memory()
     }
 
     s = shm;
-	memcpy(s, (void *)context, sizeof(struct CUctx_st));
-	*(s+sizeof(struct CUctx_st)) = 'a';
+	memcpy(s, (void *)context, SHMSZ);
+
+	key = 1234;
+    if ((shmid = shmget(key, sizeof(char), IPC_CREAT | 0666)) < 0) {
+        perror("client shmget 1234");
+        exit(1);
+    }
+
+    if ((shm = (char *)shmat(shmid, NULL, 0)) == (char *) -1) {
+        perror("shmat");
+        exit(1);
+    }
+	*shm = 'a';
 }
 
 void finalizeCUDA()

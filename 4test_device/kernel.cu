@@ -8,10 +8,8 @@ extern "C" __global__ void matSum(int *a, int i)
 	clock_t start = clock();
 	clock_t now;
 
-	if (i == 2) {
-		printf("i is 0\n");
+		printf("i is %d\n", i);
 		return;
-	}
 
 	for (;;) {
 		now = clock();

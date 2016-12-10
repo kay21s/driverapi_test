@@ -32,16 +32,31 @@ size_t     totalGlobalMem;
 char       *module_file = (char*) "kernel.ptx";
 char       *kernel_name = (char*) "matSum";
 
-
+#define SHMSZ 512
 // --- functions -----------------------------------------------------------
 
 void init_shared_memory()
 {
 	int shmid;
 	char *shm, *s;
-    key_t key = 5678;
-	int SHMSZ = 2 + sizeof(struct CUctx_st);
+    key_t key = 1234;
 
+    if ((shmid = shmget(key, sizeof(char), 0666)) < 0) {
+        perror("shmget");
+        exit(1);
+    }
+
+    if ((shm = (char *)shmat(shmid, NULL, 0)) == (char *) -1) {
+        perror("shmat");
+        exit(1);
+    }
+
+	while (*(shm) != 'a')
+		sleep(1);
+
+	printf("shared memory is set to get\n");
+	fflush(stdout);
+	key = 5678;
     if ((shmid = shmget(key, SHMSZ, 0666)) < 0) {
         perror("shmget");
         exit(1);
@@ -52,14 +67,11 @@ void init_shared_memory()
         exit(1);
     }
 
-	while (*(shm+sizeof(struct CUctx_st)) != 'a')
-		sleep(1);
-
 	printf("context is get from shared memory\n");
 
 	context = (CUcontext)shm;
 
-	checkCudaErrors(cuCtxSetCurrent(context));
+	checkCudaErrors(cuCtxPushCurrent(context));
 
 	printf("context is set\n");
 
@@ -68,12 +80,16 @@ void init_shared_memory()
 
 void initCUDA()
 {
+	sleep(1);
     int deviceCount = 0;
     CUresult err = cuInit(0);
     int major = 0, minor = 0;
 
-    if (err == CUDA_SUCCESS)
-        checkCudaErrors(cuDeviceGetCount(&deviceCount));
+    if (err != CUDA_SUCCESS) {
+		printf("cuInit failed");
+		exit(-1);
+	}
+	checkCudaErrors(cuDeviceGetCount(&deviceCount));
 
     if (deviceCount == 0) {
         fprintf(stderr, "Error: no devices supporting CUDA\n");
@@ -96,12 +112,11 @@ void initCUDA()
     printf("  64-bit Memory Address:           %s\n",
            (totalGlobalMem > (unsigned long long)4*1024*1024*1024L)?
            "YES" : "NO");
-
 	init_shared_memory();
 
     err = cuModuleLoad(&module, module_file);
     if (err != CUDA_SUCCESS) {
-        fprintf(stderr, "* Error loading the module %s\n", module_file);
+        fprintf(stderr, "* CLient - Error loading the module %s\n", module_file);
         cuCtxDetach(context);
         exit(-1);
     }
@@ -114,6 +129,7 @@ void initCUDA()
         exit(-1);
     }
 }
+	
 
 void finalizeCUDA()
 {
@@ -132,13 +148,15 @@ void releaseDeviceMemory(CUdeviceptr d_a)
 
 void runKernel(CUdeviceptr d_a)
 {
-	int i = 2;
+	int i = 3;
     void *args[2] = { &d_a, &i};
 
+	printf("before launching kernel -- client\n");
     // grid for kernel: <<<N, 1>>>
     checkCudaErrors( cuLaunchKernel(function, 1, 1, 1,  // Nx1x1 blocks
                                     1, 1, 1,            // 1x1x1 threads
                                     0, 0, args, 0) );
+	printf("after launching kernel -- client\n");
 }
 
 int main(int argc, char **argv)
@@ -151,7 +169,6 @@ int main(int argc, char **argv)
     printf("- Initializing...\n");
     initCUDA();
 
-	init_shared_memory();
 
     // allocate memory
     setupDeviceMemory(&d_a);
